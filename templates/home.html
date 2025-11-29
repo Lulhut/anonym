@@ -264,7 +264,7 @@
                     this.keyPair = await CryptoUtils.generateKeyPair();
                     const pubKeyBase64 = await CryptoUtils.exportPublicKey(this.keyPair.publicKey);
 
-                    const BACKEND_URL = "http://localhost:9295";
+                    const BACKEND_URL = "https://anonym-6kyv.onrender.com:9295";
 
                     this.socket = io(BACKEND_URL, {
                         auth: {
@@ -437,4 +437,5 @@
 
     </script>
 </body>
+
 </html>
