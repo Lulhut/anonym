@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Secure Anon Chat</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        wa: {
+                            light: '#d9fdd3',
+                            dark: '#27272a',
+                            bg: '#efeae2',
+                            bgDark: '#0a0a0a',
+                            panel: '#ffffff',
+                            panelDark: '#181818',
+                            incoming: '#ffffff',
+                            incomingDark: '#282828'
+                        }
+                    },
+                    animation: {
+                        'pop-in': 'popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards',
+                        'slide-up': 'slideUp 0.4s ease-out forwards',
+                    },
+                    keyframes: {
+                        popIn: {
+                            '0%': { opacity: '0', transform: 'scale(0.5)' },
+                            '100%': { opacity: '1', transform: 'scale(1)' },
+                        },
+                        slideUp: {
+                            '0%': { opacity: '0', transform: 'translateY(20px)' },
+                            '100%': { opacity: '1', transform: 'translateY(0)' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #444;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 dark:bg-black transition-colors duration-300 h-screen flex flex-col overflow-hidden font-sans">
+
+    <div id="start-screen" class="absolute inset-0 z-50 flex items-center justify-center bg-wa-bg dark:bg-wa-bgDark transition-colors duration-300">
+        <div class="text-center p-8 bg-white dark:bg-wa-panelDark rounded-2xl shadow-xl max-w-md w-full mx-4">
+            <div class="mb-6 flex justify-center">
+                <i data-lucide="lock" class="w-16 h-16 text-green-500"></i>
+            </div>
+            <h1 class="text-3xl font-bold mb-2 text-gray-800 dark:text-gray-100">Secure Anonymous Chat</h1>
+            <p class="text-gray-600 dark:text-gray-400 mb-8">Secure E2E Encryption. No one is reading.</p>
+            <button onclick="app.startChat()" class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-4 px-6 rounded-full shadow-lg transition-all flex items-center justify-center gap-2 text-lg">
+                <i data-lucide="shield-check"></i>
+                Start Secure Session
+            </button>
+        </div>
+    </div>
+
+    <header class="bg-white dark:bg-wa-panelDark px-4 py-3 shadow-md z-10 flex items-center justify-between transition-colors duration-300">
+        <div class="flex items-center gap-3">
+            <div class="relative">
+                <div class="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center overflow-hidden">
+                    <i data-lucide="incognito" class="text-gray-500 dark:text-gray-400"></i>
+                </div>
+                <div id="status-dot" class="absolute bottom-0 right-0 w-3 h-3 bg-yellow-500 border-2 border-white dark:border-wa-panelDark rounded-full"></div>
+            </div>
+            <div>
+                <h2 class="font-bold text-gray-800 dark:text-white leading-tight">Anonymous</h2>
+                <p id="status-text" class="text-xs text-gray-500 dark:text-gray-400">Searching for secure connection...</p>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+            <button onclick="app.toggleTheme()" class="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 transition-colors">
+                <i id="theme-icon" data-lucide="moon" class="w-5 h-5"></i>
+            </button>
+
+            <button onclick="app.nextChat()" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 shadow-sm">
+                <i data-lucide="shuffle" class="w-4 h-4"></i>
+                <span class="hidden sm:inline">Next Person</span>
+            </button>
+        </div>
+    </header>
+
+    <main id="chat-container" class="flex-1 overflow-y-auto p-4 bg-wa-bg dark:bg-wa-bgDark transition-colors duration-300 relative">
+
+        <div class="flex justify-center mb-6 animate-slide-up">
+            <div class="bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 text-xs py-2 px-4 rounded-lg shadow-sm text-center max-w-sm">
+                <i data-lucide="lock" class="w-3 h-3 inline-block mr-1 align-middle"></i>
+                Messages are end-to-end encrypted. Not even the server can read them.
+            </div>
+        </div>
+
+        <div id="messages-list" class="space-y-3 pb-2">
+        </div>
+
+        <div id="loading-indicator" class="hidden absolute inset-0 bg-wa-bg/80 dark:bg-wa-bgDark/80 backdrop-blur-sm z-10 flex flex-col items-center justify-center">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500 mb-4"></div>
+            <p class="text-gray-600 dark:text-gray-300 font-medium animate-pulse">Searching for partner...</p>
+        </div>
+
+    </main>
+
+    <footer class="bg-white dark:bg-wa-panelDark p-3 shadow-lg z-20 transition-colors duration-300">
+        <form id="chat-form" onsubmit="app.sendMessage(event)" class="flex items-end gap-2 max-w-4xl mx-auto" autocomplete="off">
+            <input
+                type="text"
+                id="message-input"
+                placeholder="Type a message..."
+                disabled
+                autocomplete="off"
+                class="flex-1 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-white px-4 py-3 rounded-2xl focus:outline-none focus:ring-2 focus:ring-green-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+            <button
+                type="submit"
+                id="send-button"
+                disabled
+                class="bg-green-500 hover:bg-green-600 disabled:bg-gray-400 text-white p-3 rounded-full shadow-md transition-all transform active:scale-95 flex items-center justify-center"
+            >
+                <i data-lucide="send" class="w-5 h-5 ml-0.5"></i>
+            </button>
+        </form>
+    </footer>
+
+    <script>
+        const CryptoUtils = {
+            async generateKeyPair() {
+                return window.crypto.subtle.generateKey(
+                    {
+                        name: "RSA-OAEP",
+                        modulusLength: 4096,
+                        publicExponent: new Uint8Array([1, 0, 1]),
+                        hash: "SHA-256"
+                    },
+                    true,
+                    ["encrypt", "decrypt"]
+                );
+            },
+
+            async exportPublicKey(key) {
+                const exported = await window.crypto.subtle.exportKey("spki", key);
+                return btoa(String.fromCharCode(...new Uint8Array(exported)));
+            },
+
+            async importPublicKey(base64Key) {
+                const binaryString = atob(base64Key);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+                return window.crypto.subtle.importKey(
+                    "spki",
+                    bytes.buffer,
+                    { name: "RSA-OAEP", hash: "SHA-256" },
+                    true,
+                    ["encrypt"]
+                );
+            },
+
+            async encrypt(text, publicKey) {
+                const encoder = new TextEncoder();
+                const data = encoder.encode(text);
+                const encrypted = await window.crypto.subtle.encrypt(
+                    { name: "RSA-OAEP" },
+                    publicKey,
+                    data
+                );
+                return btoa(String.fromCharCode(...new Uint8Array(encrypted)));
+            },
+
+            async decrypt(encryptedBase64, privateKey) {
+                try {
+                    const binaryString = atob(encryptedBase64);
+                    const bytes = new Uint8Array(binaryString.length);
+                    for (let i = 0; i < binaryString.length; i++) {
+                        bytes[i] = binaryString.charCodeAt(i);
+                    }
+                    const decrypted = await window.crypto.subtle.decrypt(
+                        { name: "RSA-OAEP" },
+                        privateKey,
+                        bytes.buffer
+                    );
+                    const decoder = new TextDecoder();
+                    return decoder.decode(decrypted);
+                } catch (e) {
+                    console.error("Decryption failed", e);
+                    return "[Encrypted message could not be decrypted]";
+                }
+            }
+        };
+
+        const app = {
+            socket: null,
+            keyPair: null,
+            partnerPublicKey: null,
+            isConnected: false,
+
+            ui: {
+                startScreen: document.getElementById('start-screen'),
+                messagesList: document.getElementById('messages-list'),
+                statusText: document.getElementById('status-text'),
+                statusDot: document.getElementById('status-dot'),
+                input: document.getElementById('message-input'),
+                sendBtn: document.getElementById('send-button'),
+                loader: document.getElementById('loading-indicator'),
+                chatContainer: document.getElementById('chat-container')
+            },
+
+            init() {
+                lucide.createIcons();
+
+                if (localStorage.theme === 'light') {
+                    document.documentElement.classList.remove('dark');
+                    document.getElementById('theme-icon').setAttribute('data-lucide', 'moon');
+                } else {
+                    document.documentElement.classList.add('dark');
+                    document.getElementById('theme-icon').setAttribute('data-lucide', 'sun');
+                    localStorage.theme = 'dark';
+                }
+                lucide.createIcons();
+            },
+
+            toggleTheme() {
+                const isDark = document.documentElement.classList.toggle('dark');
+                localStorage.theme = isDark ? 'dark' : 'light';
+
+                const icon = document.getElementById('theme-icon');
+                if(isDark) {
+                    icon.setAttribute('data-lucide', 'sun');
+                } else {
+                    icon.setAttribute('data-lucide', 'moon');
+                }
+                lucide.createIcons();
+            },
+
+            async startChat() {
+                this.ui.startScreen.style.display = 'none';
+                this.ui.messagesList.innerHTML = '';
+                this.setStatus('generating_keys');
+                this.disableInput(true);
+
+                try {
+                    this.keyPair = await CryptoUtils.generateKeyPair();
+                    const pubKeyBase64 = await CryptoUtils.exportPublicKey(this.keyPair.publicKey);
+
+                    const BACKEND_URL = "http://localhost:9295";
+
+                    this.socket = io(BACKEND_URL, {
+                        auth: {
+                            public_key: pubKeyBase64
+                        },
+                        query: {
+                            public_key: pubKeyBase64
+                        }
+                    });
+
+                    this.setupSocketEvents();
+
+                } catch (e) {
+                    console.error("Error starting chat:", e);
+                    alert("Error starting encryption. Please refresh your browser.");
+                }
+            },
+
+            setupSocketEvents() {
+                this.socket.on('connect', () => {
+                    console.log("Connected to server");
+                    this.setStatus('waiting');
+                });
+
+                this.socket.on('connected', async (data) => {
+                    console.log("Partner connected!");
+                    if (data && data.public_key) {
+                        try {
+                            this.partnerPublicKey = await CryptoUtils.importPublicKey(data.public_key);
+                            this.isConnected = true;
+                            this.setStatus('connected');
+                            this.disableInput(false);
+                            this.addSystemMessage("Secure connection established.");
+                        } catch (e) {
+                            console.error("Key import error:", e);
+                            this.addSystemMessage("Error during key exchange.");
+                        }
+                    }
+                });
+
+                this.socket.on('chat', async (data) => {
+                    if (data.message) {
+                        const decryptedText = await CryptoUtils.decrypt(data.message, this.keyPair.privateKey);
+                        this.appendMessage(decryptedText, 'received');
+                    }
+                });
+
+                this.socket.on('partner_disconnected', () => {
+                    this.isConnected = false;
+                    this.partnerPublicKey = null;
+                    this.setStatus('disconnected');
+                    this.disableInput(true);
+                    this.addSystemMessage("Partner has disconnected.");
+                });
+            },
+
+            nextChat() {
+                if (this.socket) {
+                    this.socket.disconnect();
+                }
+                this.keyPair = null;
+                this.partnerPublicKey = null;
+                this.isConnected = false;
+
+                this.startChat();
+            },
+
+            async sendMessage(e) {
+                e.preventDefault();
+                if (!this.isConnected || !this.ui.input.value.trim() || !this.partnerPublicKey) return;
+
+                const rawText = this.ui.input.value.trim();
+                this.ui.input.value = '';
+                this.ui.input.focus();
+
+                this.appendMessage(rawText, 'sent');
+
+                try {
+                    const encryptedMsg = await CryptoUtils.encrypt(rawText, this.partnerPublicKey);
+                    this.socket.emit('chat', { message: encryptedMsg });
+                } catch (err) {
+                    console.error("Encryption error:", err);
+                    this.addSystemMessage("Error sending message.");
+                }
+            },
+
+            setStatus(state) {
+                this.ui.loader.classList.add('hidden');
+
+                switch(state) {
+                    case 'generating_keys':
+                        this.ui.statusText.textContent = "Generating crypto keys...";
+                        this.ui.statusDot.className = "absolute bottom-0 right-0 w-3 h-3 bg-blue-500 border-2 border-white dark:border-wa-panelDark rounded-full animate-pulse";
+                        break;
+                    case 'waiting':
+                        this.ui.statusText.textContent = "Waiting for partner...";
+                        this.ui.statusDot.className = "absolute bottom-0 right-0 w-3 h-3 bg-yellow-500 border-2 border-white dark:border-wa-panelDark rounded-full animate-pulse";
+                        this.ui.loader.classList.remove('hidden');
+                        break;
+                    case 'connected':
+                        this.ui.statusText.textContent = "Connected (Secure)";
+                        this.ui.statusDot.className = "absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white dark:border-wa-panelDark rounded-full";
+                        break;
+                    case 'disconnected':
+                        this.ui.statusText.textContent = "Connection ended";
+                        this.ui.statusDot.className = "absolute bottom-0 right-0 w-3 h-3 bg-red-500 border-2 border-white dark:border-wa-panelDark rounded-full";
+                        break;
+                }
+            },
+
+            disableInput(disabled) {
+                this.ui.input.disabled = disabled;
+                this.ui.sendBtn.disabled = disabled;
+                if (!disabled) this.ui.input.focus();
+            },
+
+            appendMessage(text, type) {
+                const div = document.createElement('div');
+                div.className = `flex ${type === 'sent' ? 'justify-end' : 'justify-start'} animate-pop-in`;
+
+                const bubbleColor = type === 'sent'
+                    ? 'bg-wa-light dark:bg-wa-dark text-gray-800 dark:text-gray-100'
+                    : 'bg-wa-incoming dark:bg-wa-incomingDark text-gray-800 dark:text-gray-100';
+
+                const roundness = type === 'sent' ? 'rounded-tr-none' : 'rounded-tl-none';
+
+                const time = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+
+                div.innerHTML = `
+                    <div class="${bubbleColor} p-3 rounded-lg ${roundness} shadow-sm max-w-[85%] break-words relative min-w-[80px]">
+                        <p class="text-sm sm:text-base leading-relaxed">${this.escapeHtml(text)}</p>
+                        <span class="text-[10px] block text-right mt-1 opacity-60">${time}</span>
+                    </div>
+                `;
+
+                this.ui.messagesList.appendChild(div);
+                this.scrollToBottom();
+            },
+
+            addSystemMessage(text) {
+                const div = document.createElement('div');
+                div.className = "flex justify-center my-2 animate-fade-in";
+                div.innerHTML = `
+                    <div class="bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-xs py-1 px-3 rounded-full shadow-sm">
+                        ${text}
+                    </div>
+                `;
+                this.ui.messagesList.appendChild(div);
+                this.scrollToBottom();
+            },
+
+            scrollToBottom() {
+                const container = this.ui.chatContainer;
+                setTimeout(() => {
+                    container.scrollTop = container.scrollHeight;
+                }, 50);
+            },
+
+            escapeHtml(unsafe) {
+                return unsafe
+                     .replace(/&/g, "&amp;")
+                     .replace(/</g, "&lt;")
+                     .replace(/>/g, "&gt;")
+                     .replace(/"/g, "&quot;")
+                     .replace(/'/g, "&#039;");
+            }
+        };
+
+        app.init();
+
+    </script>
+</body>
+</html>
